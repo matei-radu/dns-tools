@@ -1,0 +1,20 @@
+/debug/
+/target/
+
+**/*.rs.bk
+**/*.rs.pending-snap
+
+# IDEs
+.idea/*
+*.log
+*.iml
+.vscode/settings.json
+
+# System
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Thumbs.db:encryptable
+[Dd]esktop.ini
+$RECYCLE.BIN

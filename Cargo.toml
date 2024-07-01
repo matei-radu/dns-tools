@@ -1,0 +1,11 @@
+[workspace]
+members = ["lib"]
+resolver = "2"
+
+[workspace.package]
+rust-version = "1.79"
+edition = "2021"
+authors = ["Matei Bogdan Radu <opensource@mateiradu.dev>"]
+repository = "https://github.com/matei-radu/dns-tools"
+readme = "README.md"
+license = "Apache-2.0"

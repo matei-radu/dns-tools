@@ -1,0 +1,14 @@
+comment:
+  layout: "diff, files, components"
+
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+  individual_components:
+    - component_id: dns_lib
+      name: dns_lib
+      paths:
+        - lib/src/lib.rs
+        - lib/src/*
