@@ -1,3 +1,17 @@
+coverage:
+  precision: 0
+  round: down
+  range: "80..100"
+  status:
+    project:
+      default:
+        target: auto
+        threshould: 20 # Project is still small so high variations can still happen.
+    project:
+      default:
+        target: auto
+        threshould: 20 # Project is still small so high variations can still happen.
+
 comment:
   layout: "diff, files, components"
 
