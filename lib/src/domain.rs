@@ -30,7 +30,7 @@ pub fn bytes_are_domain(bytes: &[u8]) -> bool {
 ///
 /// See [RFC 1034, Section 3.5 - Preferred name syntax](https://datatracker.ietf.org/doc/html/rfc1034#section-3.5)
 pub fn bytes_are_label(bytes: &[u8]) -> bool {
-    if bytes.len() == 0 && bytes.len() > MAX_LABEL_LENGTH {
+    if bytes.len() == 0 || bytes.len() > MAX_LABEL_LENGTH {
         return false;
     }
 
@@ -90,6 +90,15 @@ mod tests {
     #[case(b"ab-", false)]
     #[case(b"-a", false)]
     #[case(b"bar-", false)]
+    #[case(b"", false)]
+    #[case(
+        b"a-label-that-is-exactly-sixty-three-characters-long-as-per-spec",
+        true
+    )]
+    #[case(
+        b"a-label-that-exceeds-the-allowed-limit-of-sixty-three-characters",
+        false
+    )]
     fn bytes_are_label_works_correctly(#[case] input: &[u8], #[case] expected: bool) {
         assert_eq!(bytes_are_label(input), expected);
     }
