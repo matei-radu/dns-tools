@@ -6,11 +6,11 @@ coverage:
     project:
       default:
         target: auto
-        threshould: 20 # Project is still small so high variations can still happen.
-    project:
+        threshold: 20 # Project is still small so high variations can still happen.
+    patch:
       default:
         target: auto
-        threshould: 20 # Project is still small so high variations can still happen.
+        threshold: 20 # Project is still small so high variations can still happen.
 
 comment:
   layout: "diff, files, components"
