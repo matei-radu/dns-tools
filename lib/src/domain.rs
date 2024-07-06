@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fmt;
+
 const MAX_LABEL_LENGTH: usize = 63;
 const LABEL_SEPARATOR: char = '.';
 
@@ -108,6 +110,12 @@ impl TryFrom<&[u8]> for Domain {
                 .map(|&slice| unsafe { std::str::from_utf8_unchecked(slice).to_string() })
                 .collect(),
         })
+    }
+}
+
+impl fmt::Display for Domain {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.labels.join(&LABEL_SEPARATOR.to_string()))
     }
 }
 
@@ -216,5 +224,18 @@ mod tests {
         let result = Domain::try_from(input);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), ok);
+    }
+
+    #[rstest]
+    #[case("example")]
+    #[case("mercedes-benz.de")]
+    #[case("live-365")]
+    #[case("live-365.com")]
+    #[case("d111111abcdef8.cloudfront.net")]
+    #[case("a.b.c.d.e.f")]
+    fn domain_to_string_valid(#[case] input: String) {
+        let result = Domain::try_from(input.clone());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().to_string(), input);
     }
 }
