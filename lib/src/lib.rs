@@ -13,3 +13,6 @@
 // limitations under the License.
 
 pub mod domain;
+
+/// Version of the library.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
