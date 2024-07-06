@@ -41,8 +41,8 @@ impl TryFrom<String> for Domain {
 
     /// Tries to convert a [`String`] into a `Domain`.
     ///
-    /// A valid DNS domain name string consists of one or more labels separated
-    /// by dots (`.`). Each label starts with a letter, ends with a letter or
+    /// A valid DNS domain name consists of one or more labels separated by
+    /// dots (`.`). Each label starts with a letter, ends with a letter or
     /// digit, and can contain letters, digits, and hyphens in between.
     ///
     /// For more details, see [RFC 1034, Section 3.5].
@@ -60,22 +60,54 @@ impl TryFrom<String> for Domain {
     ///
     /// [RFC 1034, Section 3.5]: https://datatracker.ietf.org/doc/html/rfc1034#section-3.5
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        let labels: Vec<String> = value
-            .split(|character| character == LABEL_SEPARATOR)
-            .map(String::from)
-            .collect();
+        Domain::try_from(value.as_bytes())
+    }
+}
+
+impl TryFrom<&[u8]> for Domain {
+    type Error = InvalidDomainError;
+
+    /// Tries to convert a slice `&[u8]` into a `Domain`.
+    ///
+    /// A valid DNS domain name consists of one or more labels separated by
+    /// dots (`.`). Each label starts with a letter, ends with a letter or
+    /// digit, and can contain letters, digits, and hyphens in between.
+    ///
+    /// For more details, see [RFC 1034, Section 3.5].
+    ///
+    /// # Example
+    /// ```
+    /// use dns_lib::domain::Domain;
+    ///
+    /// let valid_domain = b"example.com" as &[u8];
+    /// assert!(Domain::try_from(valid_domain).is_ok());
+    ///
+    /// let invalid_domain = b"foo-..bar" as &[u8];
+    /// assert!(Domain::try_from(invalid_domain).is_err());
+    /// ```
+    ///
+    /// [RFC 1034, Section 3.5]: https://datatracker.ietf.org/doc/html/rfc1034#section-3.5
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let labels: Vec<&[u8]> = value.split(|&byte| byte == LABEL_SEPARATOR as u8).collect();
 
         if labels.is_empty() {
             return Err(InvalidDomainError);
         }
 
         for label in &labels {
-            if !bytes_are_label(label.as_bytes()) {
+            if !bytes_are_label(label) {
                 return Err(InvalidDomainError);
             }
         }
 
-        Ok(Domain { labels })
+        Ok(Domain {
+            labels: labels
+                .iter()
+                // The earlier `bytes_are_label` ensures that, at this stage, all label
+                // slices can be safely converted.
+                .map(|&slice| unsafe { std::str::from_utf8_unchecked(slice).to_string() })
+                .collect(),
+        })
     }
 }
 
@@ -166,7 +198,21 @@ mod tests {
     #[case("live-365", Domain{ labels: vec!["live-365".to_string()]})]
     #[case("live-365.com", Domain{ labels: vec!["live-365".to_string(), "com".to_string()]})]
     #[case("d111111abcdef8.cloudfront.net", Domain{ labels: vec!["d111111abcdef8".to_string(), "cloudfront".to_string(), "net".to_string()]})]
-    fn domain_try_from_succeeds(#[case] input: String, #[case] ok: Domain) {
+    fn domain_try_from_string_succeeds(#[case] input: String, #[case] ok: Domain) {
+        let result = Domain::try_from(input);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), ok);
+    }
+
+    #[rstest]
+    #[case(b"a", Domain{ labels: vec!["a".to_string()]})]
+    #[case(b"example", Domain{ labels: vec!["example".to_string()]})]
+    #[case(b"example.com", Domain{ labels: vec!["example".to_string(), "com".to_string()]})]
+    #[case(b"mercedes-benz.de", Domain{ labels: vec!["mercedes-benz".to_string(), "de".to_string()]})]
+    #[case(b"live-365", Domain{ labels: vec!["live-365".to_string()]})]
+    #[case(b"live-365.com", Domain{ labels: vec!["live-365".to_string(), "com".to_string()]})]
+    #[case(b"d111111abcdef8.cloudfront.net", Domain{ labels: vec!["d111111abcdef8".to_string(), "cloudfront".to_string(), "net".to_string()]})]
+    fn domain_try_from_byte_slice_succeeds(#[case] input: &[u8], #[case] ok: Domain) {
         let result = Domain::try_from(input);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), ok);
