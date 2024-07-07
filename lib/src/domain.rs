@@ -18,7 +18,19 @@ const MAX_LABEL_LENGTH: usize = 63;
 const LABEL_SEPARATOR: char = '.';
 
 #[derive(Debug)]
-pub struct InvalidDomainError;
+pub enum DomainError {
+    EmptyDomain,
+    InvalidLabelFormat,
+}
+
+impl fmt::Display for DomainError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::EmptyDomain => write!(f, "domain is empty"),
+            Self::InvalidLabelFormat => write!(f, "label is invalid"),
+        }
+    }
+}
 
 /// Representation of a DNS domain name.
 ///
@@ -39,7 +51,7 @@ pub struct Domain {
 }
 
 impl TryFrom<String> for Domain {
-    type Error = InvalidDomainError;
+    type Error = DomainError;
 
     /// Tries to convert a [`String`] into a `Domain`.
     ///
@@ -67,7 +79,7 @@ impl TryFrom<String> for Domain {
 }
 
 impl TryFrom<&[u8]> for Domain {
-    type Error = InvalidDomainError;
+    type Error = DomainError;
 
     /// Tries to convert a slice `&[u8]` into a `Domain`.
     ///
@@ -90,15 +102,15 @@ impl TryFrom<&[u8]> for Domain {
     ///
     /// [RFC 1034, Section 3.5]: https://datatracker.ietf.org/doc/html/rfc1034#section-3.5
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let labels: Vec<&[u8]> = value.split(|&byte| byte == LABEL_SEPARATOR as u8).collect();
-
-        if labels.is_empty() {
-            return Err(InvalidDomainError);
+        if value.is_empty() {
+            return Err(DomainError::EmptyDomain);
         }
+
+        let labels: Vec<&[u8]> = value.split(|&byte| byte == LABEL_SEPARATOR as u8).collect();
 
         for label in &labels {
             if !bytes_are_label(label) {
-                return Err(InvalidDomainError);
+                return Err(DomainError::InvalidLabelFormat);
             }
         }
 
@@ -224,6 +236,16 @@ mod tests {
         let result = Domain::try_from(input);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), ok);
+    }
+
+    #[rstest]
+    #[case("-.com", "label is invalid".to_string())]
+    #[case("sübway.com", "label is invalid".to_string())]
+    #[case("", "domain is empty".to_string())]
+    fn domain_try_from_string_fails(#[case] input: String, #[case] error_msg: String) {
+        let result = Domain::try_from(input);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), error_msg);
     }
 
     #[rstest]
