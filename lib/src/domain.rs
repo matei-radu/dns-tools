@@ -20,6 +20,8 @@ const LABEL_SEPARATOR: char = '.';
 #[derive(Debug)]
 pub enum DomainError {
     EmptyDomain,
+    EmptyLabel,
+    LabelTooLong,
     InvalidLabelFormat,
 }
 
@@ -27,6 +29,12 @@ impl fmt::Display for DomainError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::EmptyDomain => write!(f, "domain is empty"),
+            Self::EmptyLabel => write!(f, "label is empty"),
+            Self::LabelTooLong => write!(
+                f,
+                "label exceeds the maximum allowed length of {} characters",
+                MAX_LABEL_LENGTH
+            ),
             Self::InvalidLabelFormat => write!(f, "label is invalid"),
         }
     }
@@ -106,22 +114,15 @@ impl TryFrom<&[u8]> for Domain {
             return Err(DomainError::EmptyDomain);
         }
 
-        let labels: Vec<&[u8]> = value.split(|&byte| byte == LABEL_SEPARATOR as u8).collect();
+        let raw_labels: Vec<&[u8]> = value.split(|&byte| byte == LABEL_SEPARATOR as u8).collect();
 
-        for label in &labels {
-            if !bytes_are_label(label) {
-                return Err(DomainError::InvalidLabelFormat);
-            }
+        let parsed_labels_result: Result<Vec<String>, DomainError> =
+            raw_labels.iter().map(|&slice| parse_label(slice)).collect();
+
+        match parsed_labels_result {
+            Ok(labels) => Ok(Domain { labels }),
+            Err(e) => Err(e),
         }
-
-        Ok(Domain {
-            labels: labels
-                .iter()
-                // The earlier `bytes_are_label` ensures that, at this stage, all label
-                // slices can be safely converted.
-                .map(|&slice| unsafe { std::str::from_utf8_unchecked(slice).to_string() })
-                .collect(),
-        })
     }
 }
 
@@ -131,19 +132,33 @@ impl fmt::Display for Domain {
     }
 }
 
-/// Checks if the byte array is a valid DNS `label`, that is, a string that
-/// starts with a letter, ends with a letter or digit, and has as interior
-/// characters only letters, digits, and hyphens.
+/// Tries to convert a slice `&[u8]` into a label [`String`].
+///
+/// A valid DNS `label` is a string that starts with a letter, ends with a
+/// letter or digit, and has as interior characters only letters, digits,
+/// and hyphens.
 ///
 /// See [RFC 1034, Section 3.5 - Preferred name syntax](https://datatracker.ietf.org/doc/html/rfc1034#section-3.5)
-pub fn bytes_are_label(bytes: &[u8]) -> bool {
-    if bytes.len() == 0 || bytes.len() > MAX_LABEL_LENGTH {
-        return false;
+pub fn parse_label(bytes: &[u8]) -> Result<String, DomainError> {
+    let label = match std::str::from_utf8(bytes) {
+        Ok(str) => str.to_string(),
+        Err(_) => return Err(DomainError::InvalidLabelFormat),
+    };
+
+    if bytes.len() == 0 {
+        return Err(DomainError::EmptyLabel);
+    }
+
+    if bytes.len() > MAX_LABEL_LENGTH {
+        return Err(DomainError::LabelTooLong);
     }
 
     let (first_byte, remaining_bytes) = bytes.split_at(1);
     if remaining_bytes.len() == 0 {
-        return first_byte[0].is_ascii_alphabetic();
+        match first_byte[0].is_ascii_alphabetic() {
+            true => return Ok(label),
+            false => return Err(DomainError::InvalidLabelFormat),
+        };
     }
 
     let (middle_bytes, last_byte) = remaining_bytes.split_at(remaining_bytes.len() - 1);
@@ -152,7 +167,10 @@ pub fn bytes_are_label(bytes: &[u8]) -> bool {
     let last_byte_letter_digit = last_byte.len() == 0 || last_byte[0].is_ascii_alphanumeric();
     let middle_bytes_are_ldh_str = middle_bytes.len() == 0 || bytes_are_ldh_str(middle_bytes);
 
-    first_byte_letter && middle_bytes_are_ldh_str && last_byte_letter_digit
+    match first_byte_letter && middle_bytes_are_ldh_str && last_byte_letter_digit {
+        true => Ok(label),
+        false => Err(DomainError::InvalidLabelFormat),
+    }
 }
 
 /// Checks if the byte array is a valid DNS `ldh-str`, that is, a string
@@ -184,30 +202,36 @@ mod tests {
     }
 
     #[rstest]
-    #[case(b"a", true)]
-    #[case(b"a4", true)]
-    #[case(b"foo", true)]
-    #[case(b"mercedes-benz", true)]
-    #[case(b"live-365", true)]
-    #[case(b"d111111abcdef8", true)]
-    #[case(b"420", false)]
-    #[case(b"4a", false)]
-    #[case(b"-", false)]
-    #[case(b"a-", false)]
-    #[case(b"ab-", false)]
-    #[case(b"-a", false)]
-    #[case(b"bar-", false)]
-    #[case(b"", false)]
-    #[case(
-        b"a-label-that-is-exactly-sixty-three-characters-long-as-per-spec",
-        true
-    )]
+    #[case("a".to_string())]
+    #[case("a4".to_string())]
+    #[case("foo".to_string())]
+    #[case("mercedes-benz".to_string())]
+    #[case("live-365".to_string())]
+    #[case("d111111abcdef8".to_string())]
+    #[case("a-label-that-is-exactly-sixty-three-characters-long-as-per-spec".to_string())]
+    fn parse_label_succeeds(#[case] input: String) {
+        let result = parse_label(input.as_bytes());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), input);
+    }
+
+    #[rstest]
+    #[case(b"420", "label is invalid".to_string())]
+    #[case(b"4a", "label is invalid".to_string())]
+    #[case(b"-", "label is invalid".to_string())]
+    #[case(b"a-", "label is invalid".to_string())]
+    #[case(b"ab-", "label is invalid".to_string())]
+    #[case(b"-a", "label is invalid".to_string())]
+    #[case(b"bar-", "label is invalid".to_string())]
+    #[case(b"", "label is empty".to_string())]
     #[case(
         b"a-label-that-exceeds-the-allowed-limit-of-sixty-three-characters",
-        false
+        "label exceeds the maximum allowed length of 63 characters".to_string()
     )]
-    fn bytes_are_label_works_correctly(#[case] input: &[u8], #[case] expected: bool) {
-        assert_eq!(bytes_are_label(input), expected);
+    fn parse_label_fails(#[case] input: &[u8], #[case] error_msg: String) {
+        let result = parse_label(input);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), error_msg);
     }
 
     #[rstest]
@@ -242,6 +266,11 @@ mod tests {
     #[case("-.com", "label is invalid".to_string())]
     #[case("sübway.com", "label is invalid".to_string())]
     #[case("", "domain is empty".to_string())]
+    #[case(
+        "a-label-that-exceeds-the-allowed-limit-of-sixty-three-characters.yahoo.com",
+        "label exceeds the maximum allowed length of 63 characters".to_string()
+    )]
+    #[case("cdn..com", "label is empty".to_string())]
     fn domain_try_from_string_fails(#[case] input: String, #[case] error_msg: String) {
         let result = Domain::try_from(input);
         assert!(result.is_err());
