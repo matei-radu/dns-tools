@@ -12,33 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::domain::error::TryFromError;
 use std::fmt;
 
-const MAX_LABEL_LENGTH: usize = 63;
+pub const MAX_LABEL_LENGTH: usize = 63;
 const LABEL_SEPARATOR: char = '.';
-
-#[derive(Debug)]
-pub enum DomainError {
-    EmptyDomain,
-    EmptyLabel,
-    LabelTooLong,
-    InvalidLabelFormat,
-}
-
-impl fmt::Display for DomainError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::EmptyDomain => write!(f, "domain is empty"),
-            Self::EmptyLabel => write!(f, "label is empty"),
-            Self::LabelTooLong => write!(
-                f,
-                "label exceeds the maximum allowed length of {} characters",
-                MAX_LABEL_LENGTH
-            ),
-            Self::InvalidLabelFormat => write!(f, "label is invalid"),
-        }
-    }
-}
 
 /// Representation of a DNS domain name.
 ///
@@ -59,7 +37,7 @@ pub struct Domain {
 }
 
 impl TryFrom<String> for Domain {
-    type Error = DomainError;
+    type Error = TryFromError;
 
     /// Tries to convert a [`String`] into a `Domain`.
     ///
@@ -71,7 +49,7 @@ impl TryFrom<String> for Domain {
     ///
     /// # Example
     /// ```
-    /// use dns_lib::domain::Domain;
+    /// use dns_lib::Domain;
     ///
     /// let valid_domain = "example.com".to_string();
     /// assert!(Domain::try_from(valid_domain).is_ok());
@@ -87,7 +65,7 @@ impl TryFrom<String> for Domain {
 }
 
 impl TryFrom<&[u8]> for Domain {
-    type Error = DomainError;
+    type Error = TryFromError;
 
     /// Tries to convert a slice `&[u8]` into a `Domain`.
     ///
@@ -99,7 +77,7 @@ impl TryFrom<&[u8]> for Domain {
     ///
     /// # Example
     /// ```
-    /// use dns_lib::domain::Domain;
+    /// use dns_lib::Domain;
     ///
     /// let valid_domain = b"example.com" as &[u8];
     /// assert!(Domain::try_from(valid_domain).is_ok());
@@ -111,12 +89,12 @@ impl TryFrom<&[u8]> for Domain {
     /// [RFC 1034, Section 3.5]: https://datatracker.ietf.org/doc/html/rfc1034#section-3.5
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.is_empty() {
-            return Err(DomainError::EmptyDomain);
+            return Err(TryFromError::DomainEmpty);
         }
 
         let raw_labels: Vec<&[u8]> = value.split(|&byte| byte == LABEL_SEPARATOR as u8).collect();
 
-        let parsed_labels_result: Result<Vec<String>, DomainError> =
+        let parsed_labels_result: Result<Vec<String>, TryFromError> =
             raw_labels.iter().map(|&slice| parse_label(slice)).collect();
 
         match parsed_labels_result {
@@ -139,25 +117,25 @@ impl fmt::Display for Domain {
 /// and hyphens.
 ///
 /// See [RFC 1034, Section 3.5 - Preferred name syntax](https://datatracker.ietf.org/doc/html/rfc1034#section-3.5)
-pub fn parse_label(bytes: &[u8]) -> Result<String, DomainError> {
-    let label = match std::str::from_utf8(bytes) {
+pub fn parse_label(bytes: &[u8]) -> Result<String, TryFromError> {
+    let label = match std::string::String::from_utf8(bytes.to_vec()) {
         Ok(str) => str.to_string(),
-        Err(_) => return Err(DomainError::InvalidLabelFormat),
+        Err(e) => return Err(TryFromError::LabelInvalidEncoding(e)),
     };
 
     if bytes.len() == 0 {
-        return Err(DomainError::EmptyLabel);
+        return Err(TryFromError::LabelEmpty);
     }
 
     if bytes.len() > MAX_LABEL_LENGTH {
-        return Err(DomainError::LabelTooLong);
+        return Err(TryFromError::LabelTooLong(label));
     }
 
     let (first_byte, remaining_bytes) = bytes.split_at(1);
     if remaining_bytes.len() == 0 {
         match first_byte[0].is_ascii_alphabetic() {
             true => return Ok(label),
-            false => return Err(DomainError::InvalidLabelFormat),
+            false => return Err(TryFromError::LabelInvalidFormat(label)),
         };
     }
 
@@ -169,7 +147,7 @@ pub fn parse_label(bytes: &[u8]) -> Result<String, DomainError> {
 
     match first_byte_letter && middle_bytes_are_ldh_str && last_byte_letter_digit {
         true => Ok(label),
-        false => Err(DomainError::InvalidLabelFormat),
+        false => Err(TryFromError::LabelInvalidFormat(label)),
     }
 }
 
@@ -216,17 +194,17 @@ mod tests {
     }
 
     #[rstest]
-    #[case(b"420", "label is invalid".to_string())]
-    #[case(b"4a", "label is invalid".to_string())]
-    #[case(b"-", "label is invalid".to_string())]
-    #[case(b"a-", "label is invalid".to_string())]
-    #[case(b"ab-", "label is invalid".to_string())]
-    #[case(b"-a", "label is invalid".to_string())]
-    #[case(b"bar-", "label is invalid".to_string())]
+    #[case(b"420", "label '420' has invalid format".to_string())]
+    #[case(b"4a", "label '4a' has invalid format".to_string())]
+    #[case(b"-", "label '-' has invalid format".to_string())]
+    #[case(b"a-", "label 'a-' has invalid format".to_string())]
+    #[case(b"ab-", "label 'ab-' has invalid format".to_string())]
+    #[case(b"-a", "label '-a' has invalid format".to_string())]
+    #[case(b"bar-", "label 'bar-' has invalid format".to_string())]
     #[case(b"", "label is empty".to_string())]
     #[case(
         b"a-label-that-exceeds-the-allowed-limit-of-sixty-three-characters",
-        "label exceeds the maximum allowed length of 63 characters".to_string()
+        "label 'a-label-that-exceeds-the-allowed-limit-of-sixty-three-characters' exceeds the maximum allowed length of 63 characters".to_string()
     )]
     fn parse_label_fails(#[case] input: &[u8], #[case] error_msg: String) {
         let result = parse_label(input);
@@ -263,12 +241,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case("-.com", "label is invalid".to_string())]
-    #[case("sübway.com", "label is invalid".to_string())]
+    #[case("-.com", "label '-' has invalid format".to_string())]
+    #[case("sübway.com", "label 'sübway' has invalid format".to_string())]
     #[case("", "domain is empty".to_string())]
     #[case(
         "a-label-that-exceeds-the-allowed-limit-of-sixty-three-characters.yahoo.com",
-        "label exceeds the maximum allowed length of 63 characters".to_string()
+        "label 'a-label-that-exceeds-the-allowed-limit-of-sixty-three-characters' exceeds the maximum allowed length of 63 characters".to_string()
     )]
     #[case("cdn..com", "label is empty".to_string())]
     fn domain_try_from_string_fails(#[case] input: String, #[case] error_msg: String) {

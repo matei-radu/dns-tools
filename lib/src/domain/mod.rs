@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod domain;
+mod error;
+mod name;
 
-pub use domain::{Domain, TryFromError};
-
-/// Version of the library.
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub use error::TryFromError;
+pub use name::Domain;
