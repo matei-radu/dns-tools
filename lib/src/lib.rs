@@ -13,6 +13,7 @@
 // limitations under the License.
 
 pub mod domain;
+pub mod message;
 
 pub use domain::{Domain, TryFromError};
 
