@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::message::error::OpCodeTryFromError;
+
 /// `Message` format used by the DNS protocol.
 ///
 /// For more details, see [RFC 1035, Section 4].
@@ -69,16 +71,57 @@ pub enum OpCode {
     Query = 0,
     InverseQuery = 1,
     Status = 2,
-    Reserved,
 }
 
-impl From<u16> for OpCode {
-    fn from(value: u16) -> Self {
+impl TryFrom<u16> for OpCode {
+    type Error = OpCodeTryFromError;
+
+    /// Tries to extract the `OPCODE` from the flags portion of a DNS message
+    /// header.
+    ///
+    /// The flags portion of the DNS message header is the second set of 16
+    /// bits, after the 16-bit for the identifier:
+    ///
+    /// ```text
+    ///                                 1  1  1  1  1  1
+    ///   0  1  2  3  4  5  6  7  8  9  0  1  2  3  4  5
+    /// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    /// |                      ID                       |
+    /// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    /// |QR|   OPCODE  |AA|TC|RD|RA|   Z    |   RCODE   |
+    /// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    /// ```
+    ///
+    /// With 4 bits available, `OPCODE` _can_ have 16 possible values, but only
+    /// 3 are supported:
+    ///
+    ///  - `0` a standard query (QUERY)
+    ///  - `1` an inverse query (IQUERY)
+    ///  - `2` a server status request (STATUS)
+    ///
+    /// Unsupported values in range `3-15` will result in an
+    /// `OpCodeTryFromError`.
+    ///
+    /// For more details, see [RFC 1035, Section 4.1.1].
+    ///
+    /// # Example
+    /// ```
+    /// use dns_lib::message::OpCode;
+    ///
+    /// let valid_opcode = 0b0_0000_0_0_0_0_000_0000; // 0, QUERY
+    /// assert!(OpCode::try_from(valid_opcode).is_ok());
+    ///
+    /// let invalid_opcode = 0b0_0100_0_0_0_0_000_0000; // 4, RESERVED
+    /// assert!(OpCode::try_from(invalid_opcode).is_err());
+    /// ```
+    ///
+    /// [RFC 1035, Section 4.1.1]: https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
         match (value & 0b0_1111_0_0_0_0_000_0000) >> 11 {
-            0 => Self::Query,
-            1 => Self::InverseQuery,
-            2 => Self::Status,
-            _ => Self::Reserved,
+            0 => Ok(Self::Query),
+            1 => Ok(Self::InverseQuery),
+            2 => Ok(Self::Status),
+            unsupported => Err(OpCodeTryFromError(unsupported)),
         }
     }
 }
@@ -139,12 +182,20 @@ mod tests {
     #[case(0b0_0000_0_0_0_0_000_0000, OpCode::Query)]
     #[case(0b0_0001_0_0_0_0_000_0000, OpCode::InverseQuery)]
     #[case(0b0_0010_0_0_0_0_000_0000, OpCode::Status)]
-    #[case(0b0_0011_0_0_0_0_000_0000, OpCode::Reserved)]
-    #[case(0b0_1101_0_0_0_0_000_0000, OpCode::Reserved)]
-    #[case(0b0_1111_0_0_0_0_000_0000, OpCode::Reserved)]
-    fn op_code_from_u16_works_correctly(#[case] input: u16, #[case] expected: OpCode) {
-        let op_code = OpCode::from(input);
-        assert_eq!(op_code, expected);
+    fn op_code_try_from_u16_succeeds(#[case] input: u16, #[case] expected: OpCode) {
+        let result = OpCode::try_from(input);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case(0b0_0011_0_0_0_0_000_0000, "OPCODE '3' is not supported".to_string())]
+    #[case(0b0_1101_0_0_0_0_000_0000, "OPCODE '13' is not supported".to_string())]
+    #[case(0b0_1111_0_0_0_0_000_0000, "OPCODE '15' is not supported".to_string())]
+    fn op_code_try_from_u16_fails(#[case] input: u16, #[case] error_msg: String) {
+        let result = OpCode::try_from(input);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), error_msg);
     }
 
     #[rstest]
