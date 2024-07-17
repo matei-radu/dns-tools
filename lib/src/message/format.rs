@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::message::error::OpCodeTryFromError;
+use crate::message::error::{OpCodeTryFromError, ZTryFromError};
 
 /// `Message` format used by the DNS protocol.
 ///
@@ -126,16 +126,51 @@ impl TryFrom<u16> for OpCode {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Z {
     AllZeros = 0,
-    Reserved,
 }
 
-impl From<u16> for Z {
-    fn from(value: u16) -> Self {
+impl TryFrom<u16> for Z {
+    type Error = ZTryFromError;
+
+    /// Tries to extract the `Z` from the flags portion of a DNS message
+    /// header.
+    ///
+    /// The flags portion of the DNS message header is the second set of 16
+    /// bits, after the 16-bit for the identifier:
+    ///
+    /// ```text
+    ///                                 1  1  1  1  1  1
+    ///   0  1  2  3  4  5  6  7  8  9  0  1  2  3  4  5
+    /// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    /// |                      ID                       |
+    /// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    /// |QR|   OPCODE  |AA|TC|RD|RA|   Z    |   RCODE   |
+    /// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    /// ```
+    ///
+    /// All 3 `Z` bits are reserved, so the only acceptable value is `0`.
+    /// Any other value will result in an `ZTryFromError`.
+    ///
+    /// For more details, see [RFC 1035, Section 4.1.1].
+    ///
+    /// # Example
+    /// ```
+    /// use dns_lib::message::Z;
+    ///
+    /// let valid_z_bits = 0b0_0000_0_0_0_0_000_0000; // 0, ok
+    /// assert!(Z::try_from(valid_z_bits).is_ok());
+    ///
+    /// let invalid_z_bits = 0b0_0000_0_0_0_0_100_0000; // 4, reserved
+    /// assert!(Z::try_from(invalid_z_bits).is_err());
+    /// ```
+    ///
+    /// [RFC 1035, Section 4.1.1]: https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
         match (value & 0b0_0000_0_0_0_0_111_0000) >> 4 {
-            0 => Self::AllZeros,
-            _ => Self::Reserved,
+            0 => Ok(Self::AllZeros),
+            _ => Err(ZTryFromError),
         }
     }
 }
@@ -196,6 +231,24 @@ mod tests {
         let result = OpCode::try_from(input);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), error_msg);
+    }
+
+    #[rstest]
+    #[case(0b0_0000_0_0_0_0_000_0000)]
+    fn z_try_from_u16_succeeds(#[case] input: u16) {
+        let result = Z::try_from(input);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Z::AllZeros);
+    }
+
+    #[rstest]
+    #[case(0b0_0000_0_0_0_0_001_0000)]
+    #[case(0b0_0000_0_0_0_0_100_0000)]
+    #[case(0b0_0000_0_0_0_0_111_0000)]
+    fn z_try_from_u16_fails(#[case] input: u16) {
+        let result = Z::try_from(input);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "all Z bits most be zero");
     }
 
     #[rstest]

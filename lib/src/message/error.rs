@@ -25,3 +25,14 @@ impl fmt::Display for OpCodeTryFromError {
 }
 
 impl Error for OpCodeTryFromError {}
+
+#[derive(Debug, PartialEq)]
+pub struct ZTryFromError;
+
+impl fmt::Display for ZTryFromError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "all Z bits most be zero")
+    }
+}
+
+impl Error for ZTryFromError {}
