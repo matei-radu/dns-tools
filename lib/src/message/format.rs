@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::message::error::{OpCodeTryFromError, ZTryFromError};
+use crate::message::error::{OpCodeTryFromError, RCodeTryFromError, ZTryFromError};
 
 /// `Message` format used by the DNS protocol.
 ///
@@ -151,7 +151,7 @@ impl TryFrom<u16> for Z {
     /// ```
     ///
     /// All 3 `Z` bits are reserved, so the only acceptable value is `0`.
-    /// Any other value will result in an `ZTryFromError`.
+    /// Any other value will result in a `ZTryFromError`.
     ///
     /// For more details, see [RFC 1035, Section 4.1.1].
     ///
@@ -183,19 +183,63 @@ pub enum RCode {
     NameError = 3,
     NotImplemented = 4,
     Refused = 5,
-    Reserved,
 }
 
-impl From<u16> for RCode {
-    fn from(value: u16) -> Self {
+impl TryFrom<u16> for RCode {
+    type Error = RCodeTryFromError;
+
+    /// Tries to extract the `RCODE` from the flags portion of a DNS message
+    /// header.
+    ///
+    /// The flags portion of the DNS message header is the second set of 16
+    /// bits, after the 16-bit for the identifier:
+    ///
+    /// ```text
+    ///                                 1  1  1  1  1  1
+    ///   0  1  2  3  4  5  6  7  8  9  0  1  2  3  4  5
+    /// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    /// |                      ID                       |
+    /// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    /// |QR|   OPCODE  |AA|TC|RD|RA|   Z    |   RCODE   |
+    /// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    /// ```
+    ///
+    /// With 4 bits available, `RCODE` _can_ have 16 possible values, but only
+    /// 6 are supported:
+    ///
+    ///  - `0` No error condition
+    ///  - `1` Format error
+    ///  - `2` Server failure
+    ///  - `3` Name error
+    ///  - `4` Not implemented
+    ///  - `5` Refused
+    ///
+    /// Unsupported values in range `6-15` will result in an
+    /// `RCodeTryFromError`.
+    ///
+    /// For more details, see [RFC 1035, Section 4.1.1].
+    ///
+    /// # Example
+    /// ```
+    /// use dns_lib::message::RCode;
+    ///
+    /// let valid_rcode = 0b0_0000_0_0_0_0_000_0001; // 1, Format error
+    /// assert!(RCode::try_from(valid_rcode).is_ok());
+    ///
+    /// let invalid_rcode = 0b0_0100_0_0_0_0_000_1000; // 8, Reserved
+    /// assert!(RCode::try_from(invalid_rcode).is_err());
+    /// ```
+    ///
+    /// [RFC 1035, Section 4.1.1]: https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value & 0b0_0000_0_0_0_0_000_1111 {
-            0 => Self::NoError,
-            1 => Self::FormatError,
-            2 => Self::ServerFailure,
-            3 => Self::NameError,
-            4 => Self::NotImplemented,
-            5 => Self::Refused,
-            _ => Self::Reserved,
+            0 => Ok(Self::NoError),
+            1 => Ok(Self::FormatError),
+            2 => Ok(Self::ServerFailure),
+            3 => Ok(Self::NameError),
+            4 => Ok(Self::NotImplemented),
+            5 => Ok(Self::Refused),
+            unspported => Err(RCodeTryFromError(unspported)),
         }
     }
 }
@@ -253,16 +297,24 @@ mod tests {
 
     #[rstest]
     #[case(0b0_0000_0_0_0_0_000_0000, RCode::NoError)]
-    #[case(0b0_0000_0_0_0_0_000_0001, RCode::FormatError)]
-    #[case(0b0_0000_0_0_0_0_000_0010, RCode::ServerFailure)]
+    #[case(0b0_0001_0_0_0_0_000_0001, RCode::FormatError)]
+    #[case(0b0_0010_0_0_0_0_000_0010, RCode::ServerFailure)]
     #[case(0b0_0000_0_0_0_0_000_0011, RCode::NameError)]
-    #[case(0b0_0000_0_0_0_0_000_0100, RCode::NotImplemented)]
-    #[case(0b0_0000_0_0_0_0_000_0101, RCode::Refused)]
-    #[case(0b0_0000_0_0_0_0_000_0111, RCode::Reserved)]
-    #[case(0b0_0000_0_0_0_0_000_1010, RCode::Reserved)]
-    #[case(0b0_0000_0_0_0_0_000_1111, RCode::Reserved)]
-    fn r_code_from_u16_works_correctly(#[case] input: u16, #[case] expected: RCode) {
-        let r_code = RCode::from(input);
-        assert_eq!(r_code, expected);
+    #[case(0b0_0001_0_0_0_0_000_0100, RCode::NotImplemented)]
+    #[case(0b0_0010_0_0_0_0_000_0101, RCode::Refused)]
+    fn r_code_try_from_u16_succeeds(#[case] input: u16, #[case] expected: RCode) {
+        let result = RCode::try_from(input);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case(0b0_0000_0_0_0_0_000_0110, "RCODE '6' is not supported".to_string())]
+    #[case(0b0_0000_0_0_0_0_000_1101, "RCODE '13' is not supported".to_string())]
+    #[case(0b0_0000_0_0_0_0_000_1111, "RCODE '15' is not supported".to_string())]
+    fn r_code_try_from_u16_fails(#[case] input: u16, #[case] error_msg: String) {
+        let result = RCode::try_from(input);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), error_msg);
     }
 }

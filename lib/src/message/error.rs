@@ -36,3 +36,14 @@ impl fmt::Display for ZTryFromError {
 }
 
 impl Error for ZTryFromError {}
+
+#[derive(Debug, PartialEq)]
+pub struct RCodeTryFromError(pub u16);
+
+impl fmt::Display for RCodeTryFromError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "RCODE '{}' is not supported", self.0)
+    }
+}
+
+impl Error for RCodeTryFromError {}
