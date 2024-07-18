@@ -47,3 +47,56 @@ impl fmt::Display for RCodeTryFromError {
 }
 
 impl Error for RCodeTryFromError {}
+
+#[derive(Debug, PartialEq)]
+pub enum MalformedFlagsError {
+    OpCode(OpCodeTryFromError),
+    Z(ZTryFromError),
+    RCode(RCodeTryFromError),
+}
+
+impl fmt::Display for MalformedFlagsError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            MalformedFlagsError::OpCode(e) => e.fmt(f),
+            MalformedFlagsError::Z(e) => e.fmt(f),
+            MalformedFlagsError::RCode(e) => e.fmt(f),
+        }
+    }
+}
+
+impl Error for MalformedFlagsError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            MalformedFlagsError::OpCode(e) => Some(e),
+            MalformedFlagsError::Z(e) => Some(e),
+            MalformedFlagsError::RCode(e) => Some(e),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum HeaderTryFromError {
+    InsufficientHeaderBytes(usize),
+    MalformedFlags(MalformedFlagsError),
+}
+
+impl fmt::Display for HeaderTryFromError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            HeaderTryFromError::InsufficientHeaderBytes(len) => {
+                write!(f, "insufficient header bytes ({} found, 12 required)", len)
+            }
+            HeaderTryFromError::MalformedFlags(e) => e.fmt(f),
+        }
+    }
+}
+
+impl Error for HeaderTryFromError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            HeaderTryFromError::MalformedFlags(e) => Some(e),
+            _ => None,
+        }
+    }
+}
