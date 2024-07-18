@@ -14,15 +14,6 @@
 
 use crate::message::error::{OpCodeTryFromError, RCodeTryFromError, ZTryFromError};
 
-/// `Message` format used by the DNS protocol.
-///
-/// For more details, see [RFC 1035, Section 4].
-///
-/// [RFC 1035, Section 4]: https://datatracker.ietf.org/doc/html/rfc1035#section-4
-pub struct Message {
-    pub header: Header,
-}
-
 /// `Header` section of a DNS `Message`.
 ///
 /// The header section is always present. It includes fields that specify

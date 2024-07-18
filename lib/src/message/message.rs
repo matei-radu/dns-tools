@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod domain;
-pub mod message;
+use crate::message::Header;
 
-pub use domain::Domain;
-pub use message::{Header, Message};
-
-/// Version of the library.
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// `Message` format used by the DNS protocol.
+///
+/// For more details, see [RFC 1035, Section 4].
+///
+/// [RFC 1035, Section 4]: https://datatracker.ietf.org/doc/html/rfc1035#section-4
+pub struct Message {
+    pub header: Header,
+}

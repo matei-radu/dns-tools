@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod format;
+pub mod error;
+mod header;
+mod message;
 
-pub use format::*;
+pub use header::{Header, OpCode, RCode, Z};
+pub use message::Message;
