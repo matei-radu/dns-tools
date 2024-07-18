@@ -24,5 +24,4 @@ component_management:
     - component_id: dns_lib
       name: dns_lib
       paths:
-        - lib/src/lib.rs
-        - lib/src/*
+        - lib/**
