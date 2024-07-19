@@ -25,3 +25,7 @@ component_management:
       name: dns_lib
       paths:
         - lib/**
+    - component_id: dns_cli
+      name: dns_cli
+      paths:
+        - cli/**
