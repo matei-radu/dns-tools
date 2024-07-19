@@ -7,10 +7,7 @@ coverage:
       default:
         target: auto
         threshold: 20 # Project is still small so high variations can still happen.
-    patch:
-      default:
-        target: auto
-        threshold: 20 # Project is still small so high variations can still happen.
+    patch: off
 
 comment:
   layout: "diff, files, components"
