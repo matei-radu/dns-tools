@@ -15,6 +15,8 @@
 pub mod error;
 mod header;
 mod message;
+mod question;
 
 pub use header::{Header, OpCode, RCode, Z};
 pub use message::Message;
+pub use question::{KnownQType, QType, Question};

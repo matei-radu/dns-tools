@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::message::Header;
+use crate::message::Question;
 
 /// `Message` format used by the DNS protocol.
 ///
@@ -21,4 +22,5 @@ use crate::message::Header;
 /// [RFC 1035, Section 4]: https://datatracker.ietf.org/doc/html/rfc1035#section-4
 pub struct Message {
     pub header: Header,
+    pub questions: Vec<Question>,
 }
