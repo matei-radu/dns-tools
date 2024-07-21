@@ -206,6 +206,7 @@ mod tests {
         b"a-label-that-exceeds-the-allowed-limit-of-sixty-three-characters",
         "label 'a-label-that-exceeds-the-allowed-limit-of-sixty-three-characters' exceeds the maximum allowed length of 63 characters".to_string()
     )]
+    #[case(&[0, 159], "label has invalid encoding format: invalid utf-8 sequence of 1 bytes from index 1".to_string())]
     fn parse_label_fails(#[case] input: &[u8], #[case] error_msg: String) {
         let result = parse_label(input);
         assert!(result.is_err());
