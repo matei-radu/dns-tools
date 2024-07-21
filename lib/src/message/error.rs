@@ -49,36 +49,29 @@ impl fmt::Display for RCodeTryFromError {
 impl Error for RCodeTryFromError {}
 
 #[derive(Debug, PartialEq)]
-pub enum MalformedFlagsError {
-    OpCode(OpCodeTryFromError),
-    Z(ZTryFromError),
-    RCode(RCodeTryFromError),
-}
-
-impl fmt::Display for MalformedFlagsError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            MalformedFlagsError::OpCode(e) => e.fmt(f),
-            MalformedFlagsError::Z(e) => e.fmt(f),
-            MalformedFlagsError::RCode(e) => e.fmt(f),
-        }
-    }
-}
-
-impl Error for MalformedFlagsError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            MalformedFlagsError::OpCode(e) => Some(e),
-            MalformedFlagsError::Z(e) => Some(e),
-            MalformedFlagsError::RCode(e) => Some(e),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
 pub enum HeaderTryFromError {
     InsufficientHeaderBytes(usize),
-    MalformedFlags(MalformedFlagsError),
+    OpCodeTryFromError(OpCodeTryFromError),
+    ZTryFromError(ZTryFromError),
+    RCodeTryFromError(RCodeTryFromError),
+}
+
+impl From<OpCodeTryFromError> for HeaderTryFromError {
+    fn from(error: OpCodeTryFromError) -> HeaderTryFromError {
+        HeaderTryFromError::OpCodeTryFromError(error)
+    }
+}
+
+impl From<ZTryFromError> for HeaderTryFromError {
+    fn from(error: ZTryFromError) -> HeaderTryFromError {
+        HeaderTryFromError::ZTryFromError(error)
+    }
+}
+
+impl From<RCodeTryFromError> for HeaderTryFromError {
+    fn from(error: RCodeTryFromError) -> HeaderTryFromError {
+        HeaderTryFromError::RCodeTryFromError(error)
+    }
 }
 
 impl fmt::Display for HeaderTryFromError {
@@ -87,7 +80,9 @@ impl fmt::Display for HeaderTryFromError {
             HeaderTryFromError::InsufficientHeaderBytes(len) => {
                 write!(f, "insufficient header bytes ({} found, 12 required)", len)
             }
-            HeaderTryFromError::MalformedFlags(e) => e.fmt(f),
+            HeaderTryFromError::OpCodeTryFromError(e) => e.fmt(f),
+            HeaderTryFromError::ZTryFromError(e) => e.fmt(f),
+            HeaderTryFromError::RCodeTryFromError(e) => e.fmt(f),
         }
     }
 }
@@ -95,8 +90,25 @@ impl fmt::Display for HeaderTryFromError {
 impl Error for HeaderTryFromError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            HeaderTryFromError::MalformedFlags(e) => Some(e),
+            HeaderTryFromError::OpCodeTryFromError(e) => Some(e),
+            HeaderTryFromError::ZTryFromError(e) => Some(e),
+            HeaderTryFromError::RCodeTryFromError(e) => Some(e),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(HeaderTryFromError::InsufficientHeaderBytes(3), "insufficient header bytes (3 found, 12 required)".to_string())]
+    #[case(OpCodeTryFromError(14).into(), "OPCODE '14' is not supported".to_string())]
+    #[case(ZTryFromError.into(), "all Z bits most be zero".to_string())]
+    #[case(RCodeTryFromError(7).into(), "RCODE '7' is not supported".to_string())]
+    fn header_try_from_error_display(#[case] err: HeaderTryFromError, #[case] msg: String) {
+        assert_eq!(err.to_string(), msg);
     }
 }

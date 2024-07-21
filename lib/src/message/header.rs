@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::message::error::{
-    HeaderTryFromError, MalformedFlagsError, OpCodeTryFromError, RCodeTryFromError, ZTryFromError,
+    HeaderTryFromError, OpCodeTryFromError, RCodeTryFromError, ZTryFromError,
 };
 
 /// `Header` section of a DNS `Message`.
@@ -82,12 +82,9 @@ impl TryFrom<&[u8]> for Header {
 
         let flags = u16::from_be_bytes([value[2], value[3]]);
 
-        let op_code = OpCode::try_from(flags)
-            .map_err(|e| Self::Error::MalformedFlags(MalformedFlagsError::OpCode(e)))?;
-        let z = Z::try_from(flags)
-            .map_err(|e| Self::Error::MalformedFlags(MalformedFlagsError::Z(e)))?;
-        let r_code = RCode::try_from(flags)
-            .map_err(|e| Self::Error::MalformedFlags(MalformedFlagsError::RCode(e)))?;
+        let op_code = OpCode::try_from(flags).map_err(|e| Self::Error::from(e))?;
+        let z = Z::try_from(flags).map_err(|e| Self::Error::from(e))?;
+        let r_code = RCode::try_from(flags).map_err(|e| Self::Error::from(e))?;
 
         Ok(Header {
             id: u16::from_be_bytes([value[0], value[1]]),
@@ -340,13 +337,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0b0_0011_0_0_0_0_000_0000, "OPCODE '3' is not supported".to_string())]
-    #[case(0b0_1101_0_0_0_0_000_0000, "OPCODE '13' is not supported".to_string())]
-    #[case(0b0_1111_0_0_0_0_000_0000, "OPCODE '15' is not supported".to_string())]
-    fn op_code_try_from_u16_fails(#[case] input: u16, #[case] error_msg: String) {
+    #[case(0b0_0011_0_0_0_0_000_0000, OpCodeTryFromError(3))]
+    #[case(0b0_1101_0_0_0_0_000_0000, OpCodeTryFromError(13))]
+    #[case(0b0_1111_0_0_0_0_000_0000, OpCodeTryFromError(15))]
+    fn op_code_try_from_u16_fails(#[case] input: u16, #[case] err: OpCodeTryFromError) {
         let result = OpCode::try_from(input);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), error_msg);
+        assert_eq!(result.unwrap_err(), err);
     }
 
     #[rstest]
@@ -364,7 +361,7 @@ mod tests {
     fn z_try_from_u16_fails(#[case] input: u16) {
         let result = Z::try_from(input);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "all Z bits most be zero");
+        assert_eq!(result.unwrap_err(), ZTryFromError);
     }
 
     #[rstest]
@@ -381,13 +378,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0b0_0000_0_0_0_0_000_0110, "RCODE '6' is not supported".to_string())]
-    #[case(0b0_0000_0_0_0_0_000_1101, "RCODE '13' is not supported".to_string())]
-    #[case(0b0_0000_0_0_0_0_000_1111, "RCODE '15' is not supported".to_string())]
-    fn r_code_try_from_u16_fails(#[case] input: u16, #[case] error_msg: String) {
+    #[case(0b0_0000_0_0_0_0_000_0110, RCodeTryFromError(6))]
+    #[case(0b0_0000_0_0_0_0_000_1101, RCodeTryFromError(13))]
+    #[case(0b0_0000_0_0_0_0_000_1111, RCodeTryFromError(15))]
+    fn r_code_try_from_u16_fails(#[case] input: u16, #[case] err: RCodeTryFromError) {
         let result = RCode::try_from(input);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), error_msg);
+        assert_eq!(result.unwrap_err(), err);
     }
 
     #[rstest]
@@ -417,17 +414,17 @@ mod tests {
     #[case(
         // ID   , Flags                       , QD  , AN  , NS  , AR
         &[0, 255, 0b0_0111_0_0_0, 0b0_000_0000, 0, 1, 0, 0, 0, 0, 0, 0],
-        HeaderTryFromError::MalformedFlags(MalformedFlagsError::OpCode(OpCodeTryFromError(7)))
+        OpCodeTryFromError(7).into()
     )]
     #[case(
         // ID   , Flags                       , QD  , AN  , NS  , AR
         &[0, 255, 0b0_0000_0_0_0, 0b0_010_0000, 0, 1, 0, 0, 0, 0, 0, 0],
-        HeaderTryFromError::MalformedFlags(MalformedFlagsError::Z(ZTryFromError))
+        ZTryFromError.into()
     )]
     #[case(
         // ID   , Flags                       , QD  , AN  , NS  , AR
         &[0, 255, 0b0_0000_0_0_0, 0b0_000_1100, 0, 1, 0, 0, 0, 0, 0, 0],
-        HeaderTryFromError::MalformedFlags(MalformedFlagsError::RCode(RCodeTryFromError(12)))
+        RCodeTryFromError(12).into()
     )]
     fn header_try_from_fails(#[case] input: &[u8], #[case] expected: HeaderTryFromError) {
         let result = Header::try_from(input);
