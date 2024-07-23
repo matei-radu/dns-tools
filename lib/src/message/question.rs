@@ -15,6 +15,7 @@
 #[derive(Debug, PartialEq)]
 pub struct Question {
     pub q_type: QType,
+    pub q_class: QClass,
 }
 
 #[derive(Debug)]
@@ -52,6 +53,31 @@ impl QType {
             _ => None,
         }
     }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+#[repr(u16)]
+pub enum KnownQType {
+    A = 1,
+    NS = 2,
+    MD = 3,
+    MF = 4,
+    CNAME = 5,
+    SOA = 6,
+    MB = 7,
+    MG = 8,
+    MR = 9,
+    NULL = 10,
+    WKS = 11,
+    PTR = 12,
+    HINFO = 13,
+    MINFO = 14,
+    MX = 15,
+    TXT = 16,
+    AXFR = 252,
+    MAILB = 253,
+    MAILA = 254,
+    ANY = 255,
 }
 
 impl From<KnownQType> for QType {
@@ -92,29 +118,74 @@ impl PartialEq for QType {
     }
 }
 
+#[derive(Debug)]
+pub struct QClass {
+    pub value: u16,
+}
+
+impl QClass {
+    pub fn new(value: u16) -> Self {
+        QClass { value }
+    }
+
+    pub fn to_known_class(&self) -> Option<KnownQClass> {
+        match self.value {
+            1 => Some(KnownQClass::IN),
+            2 => Some(KnownQClass::CS),
+            3 => Some(KnownQClass::CH),
+            4 => Some(KnownQClass::HS),
+            255 => Some(KnownQClass::ANY),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u16)]
-pub enum KnownQType {
-    A = 1,
-    NS = 2,
-    MD = 3,
-    MF = 4,
-    CNAME = 5,
-    SOA = 6,
-    MB = 7,
-    MG = 8,
-    MR = 9,
-    NULL = 10,
-    WKS = 11,
-    PTR = 12,
-    HINFO = 13,
-    MINFO = 14,
-    MX = 15,
-    TXT = 16,
-    AXFR = 252,
-    MAILB = 253,
-    MAILA = 254,
+pub enum KnownQClass {
+    IN = 1,
+    CS = 2,
+    CH = 3,
+    HS = 4,
     ANY = 255,
+}
+
+impl From<KnownQClass> for QClass {
+    fn from(value: KnownQClass) -> Self {
+        QClass {
+            value: value as u16,
+        }
+    }
+}
+
+impl PartialEq<u16> for QClass {
+    fn eq(&self, other: &u16) -> bool {
+        self.value == *other
+    }
+}
+
+impl PartialEq<QClass> for u16 {
+    fn eq(&self, other: &QClass) -> bool {
+        *self == other.value
+    }
+}
+
+impl PartialEq<KnownQClass> for QClass {
+    fn eq(&self, other: &KnownQClass) -> bool {
+        self.value == *other as u16
+    }
+}
+
+impl PartialEq<QClass> for KnownQClass {
+    fn eq(&self, other: &QClass) -> bool {
+        *self as u16 == other.value
+    }
+}
+
+impl PartialEq for QClass {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
 }
 
 #[cfg(test)]
@@ -179,5 +250,48 @@ mod tests {
     fn qtype_compare_u16(#[case] input: u16) {
         assert_eq!(QType::new(input), input);
         assert_eq!(input, QType::new(input));
+    }
+
+    #[rstest]
+    #[case(1, KnownQClass::IN)]
+    #[case(2, KnownQClass::CS)]
+    #[case(4, KnownQClass::HS)]
+    #[case(255, KnownQClass::ANY)]
+    fn qclass_new(#[case] input: u16, #[case] expected: KnownQClass) {
+        let q_class = QClass::new(input);
+        assert_eq!(q_class.value, input);
+        assert_eq!(q_class, expected);
+    }
+
+    #[rstest]
+    #[case(1, Some(KnownQClass::IN))]
+    #[case(2, Some(KnownQClass::CS))]
+    #[case(3, Some(KnownQClass::CH))]
+    #[case(4, Some(KnownQClass::HS))]
+    #[case(255, Some(KnownQClass::ANY))]
+    #[case(1024, None)]
+    fn qclass_to_known_type(#[case] input: u16, #[case] expected: Option<KnownQClass>) {
+        assert_eq!(QClass::new(input).to_known_class(), expected);
+    }
+
+    #[rstest]
+    #[case(KnownQClass::IN)]
+    #[case(KnownQClass::CS)]
+    #[case(KnownQClass::CH)]
+    #[case(KnownQClass::HS)]
+    #[case(KnownQClass::ANY)]
+    fn qclass_from_known_qclass(#[case] input: KnownQClass) {
+        assert_eq!(QClass::from(input), input);
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(2)]
+    #[case(4)]
+    #[case(255)]
+    #[case(2048)]
+    fn qclass_compare_u16(#[case] input: u16) {
+        assert_eq!(QClass::new(input), input);
+        assert_eq!(input, QClass::new(input));
     }
 }
