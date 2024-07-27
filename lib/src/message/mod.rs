@@ -19,4 +19,4 @@ mod question;
 
 pub use header::{Header, OpCode, RCode, Z};
 pub use message::Message;
-pub use question::{KnownQType, QType, Question};
+pub use question::{parse_question, KnownQType, QType, Question};

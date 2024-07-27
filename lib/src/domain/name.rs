@@ -36,6 +36,22 @@ pub struct Domain {
     labels: Vec<String>,
 }
 
+impl Domain {
+    pub fn new() -> Self {
+        Self { labels: Vec::new() }
+    }
+
+    pub fn add_label(&mut self, bytes: &[u8]) -> Result<(), TryFromError> {
+        match parse_label(bytes) {
+            Ok(label) => {
+                self.labels.push(label);
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
 impl TryFrom<String> for Domain {
     type Error = TryFromError;
 

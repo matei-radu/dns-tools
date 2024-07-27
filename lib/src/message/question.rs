@@ -12,10 +12,99 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::domain::{error, Domain};
+
 #[derive(Debug, PartialEq)]
 pub struct Question {
+    pub q_name: Domain,
     pub q_type: QType,
     pub q_class: QClass,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct QuestionParseData {
+    pub question: Question,
+    pub bytes_read: usize,
+}
+
+pub fn parse_question(
+    message_bytes: &[u8],
+    offset: usize,
+) -> Result<QuestionParseData, error::TryFromError> {
+    let mut question_pos = offset;
+    let mut using_compression = false;
+    let mut bytes_read: usize = 0;
+
+    let mut q_name = Domain::new();
+    let mut pos = question_pos;
+    loop {
+        // Are the current and next bytes a pointer?
+        if (message_bytes[pos] & 0b11000000) == 0b11000000 {
+            if !using_compression {
+                bytes_read += 2;
+                question_pos = pos + 2;
+                using_compression = true;
+            }
+            let pointer_first_6_bits = (u16::from(message_bytes[pos]) & 0b00111111) << 8;
+            let pointer_last_8_bits = u16::from(message_bytes[pos + 1]);
+            let pointer = pointer_first_6_bits | pointer_last_8_bits;
+            pos = pointer as usize;
+            continue;
+        }
+
+        let label_length = message_bytes[pos] as usize;
+
+        // zero length indicates end of QNAME portion.
+        if label_length == 0 {
+            pos += 1;
+            if !using_compression {
+                bytes_read += 1;
+                question_pos = pos;
+            }
+            break;
+        }
+
+        // Go into first byte of the label
+        pos += 1;
+        if !using_compression {
+            bytes_read += 1;
+        }
+        let label_slice = &message_bytes[pos..pos + label_length];
+
+        // Attempt to parse label, add to domain.
+        match q_name.add_label(label_slice) {
+            Ok(()) => {
+                pos += label_length;
+                if !using_compression {
+                    bytes_read += label_length;
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    let q_type_raw =
+        u16::from_be_bytes([message_bytes[question_pos], message_bytes[question_pos + 1]]);
+    let q_type = QType::new(q_type_raw);
+
+    question_pos += 2;
+    bytes_read += 2;
+    let q_class_raw =
+        u16::from_be_bytes([message_bytes[question_pos], message_bytes[question_pos + 1]]);
+    let q_class = QClass::new(q_class_raw);
+
+    bytes_read += 2;
+
+    let question = Question {
+        q_name,
+        q_type,
+        q_class,
+    };
+
+    Ok(QuestionParseData {
+        question,
+        bytes_read,
+    })
 }
 
 #[derive(Debug)]
@@ -293,5 +382,68 @@ mod tests {
     fn qclass_compare_u16(#[case] input: u16) {
         assert_eq!(QClass::new(input), input);
         assert_eq!(input, QClass::new(input));
+    }
+
+    #[rstest]
+    #[case(
+        // example.com, A, IN, 17 bytes
+        &[7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0, 0, 1, 0, 1],
+        0,
+        QuestionParseData{
+            question: Question{
+                q_name: Domain::try_from("example.com".to_string()).unwrap(),
+                q_type: QType::from(KnownQType::A),
+                q_class: QClass::from(KnownQClass::IN),
+            },
+            bytes_read: 17,
+        }
+    )]
+    #[case(
+        // example.com, A, IN, 17 bytes, but using offset
+        &[0, 0, 0, 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0, 0, 1, 0, 1],
+        3,
+        QuestionParseData{
+            question: Question{
+                q_name: Domain::try_from("example.com".to_string()).unwrap(),
+                q_type: QType::from(KnownQType::A),
+                q_class: QClass::from(KnownQClass::IN),
+            },
+            bytes_read: 17,
+        }
+    )]
+    #[case(
+        // test.example.com, A, IN, 11 bytes, but using compression for example.com
+        &[0, 0, 0, 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0, 4, b't', b'e', b's', b't', 0b11000000, 3, 0, 1, 0, 1],
+        16,
+        QuestionParseData{
+            question: Question{
+                q_name: Domain::try_from("test.example.com".to_string()).unwrap(),
+                q_type: QType::from(KnownQType::A),
+                q_class: QClass::from(KnownQClass::IN),
+            },
+            bytes_read: 11,
+        }
+    )]
+    #[case(
+        // test.example.com, A, IN, 11 bytes, but using nested compression for example.com
+        &[3, b'c', b'o', b'm', 0, 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0b11000000, 0, 4, b't', b'e', b's', b't', 0b11000000, 5, 0, 1, 0, 1],
+        15,
+        QuestionParseData{
+            question: Question{
+                q_name: Domain::try_from("test.example.com".to_string()).unwrap(),
+                q_type: QType::from(KnownQType::A),
+                q_class: QClass::from(KnownQClass::IN),
+            },
+            bytes_read: 11,
+        }
+    )]
+    fn parse_question_works(
+        #[case] input: &[u8],
+        #[case] offset: usize,
+        #[case] expected: QuestionParseData,
+    ) {
+        let result = parse_question(input, offset);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected);
     }
 }
